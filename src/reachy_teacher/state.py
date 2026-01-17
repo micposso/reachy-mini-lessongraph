@@ -53,6 +53,21 @@ class LessonPlan(BaseModel):
     # Suggestion for which lesson to teach after this one (for curriculum guidance)
     next_lesson_hint: str
 
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any
+
+class QuizQuestion(BaseModel):
+    question: str
+    ideal_answer: str
+    rubric_points: List[str] = Field(default_factory=list)
+    sources: List[str] = Field(default_factory=list)  # chunk_id list
+
+class QuizResult(BaseModel):
+    total_score: int
+    max_score: int
+    per_question: List[Dict[str, Any]] = Field(default_factory=list)
+    feedback: str
+
 class GraphState(TypedDict, total=False):
     # inputs
     pdf_paths: List[str]
@@ -71,3 +86,11 @@ class GraphState(TypedDict, total=False):
 
     # control flags
     done: bool
+
+    score: int | None
+    score_max: int | None
+
+    retrieved: list
+    quiz: List[dict]
+    student_answers: List[str]
+    quiz_result: dict
