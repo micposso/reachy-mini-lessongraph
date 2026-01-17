@@ -1,2 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+
+# Local env
 .env
 .env.*
+
+# Local data artifacts
+chroma_index/
+*.sqlite
+*.sqlite3
+
+# uv
+.uv/
+uv.lock
