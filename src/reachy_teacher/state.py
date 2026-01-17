@@ -8,6 +8,8 @@ These structures ensure type safety and validation for lesson content generated 
 from __future__ import annotations
 from typing import List, TypedDict, Literal
 from pydantic import BaseModel, Field
+from typing import List, TypedDict, Any
+
 
 class PlanSegment(BaseModel):
     """
@@ -52,18 +54,20 @@ class LessonPlan(BaseModel):
     next_lesson_hint: str
 
 class GraphState(TypedDict, total=False):
-    """
-    Represents the state dictionary passed through the lesson planning workflow/graph.
-    
-    This TypedDict defines all the state variables that flow through the AI agent graph
-    during lesson plan generation. The 'total=False' parameter makes all fields optional,
-    allowing state to be built incrementally as the workflow progresses.
-    """
-    # List of file paths to PDF documents used as source material for the lesson
+    # inputs
     pdf_paths: List[str]
-    # The main topic or subject matter for the lesson to be generated
     topic: str
-    # Retrieved content/search results from the knowledge base or documents (used in RAG)
+    student_id: str
+    lesson_id: str
+
+    # planner output
     retrieved: list
-    # The generated lesson plan as a JSON string (final output of the workflow)
     lesson_plan_json: str
+
+    # teaching/session
+    session_id: str
+    segment_index: int
+    transcript: List[dict]
+
+    # control flags
+    done: bool
