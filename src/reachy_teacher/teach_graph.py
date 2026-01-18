@@ -12,6 +12,8 @@ from langchain_chroma import Chroma
 
 from .agents.quiz_agent import generate_quiz
 from .agents.grader_agent import grade_quiz
+from .agents.summary_agent import generate_summary
+
 from .db import init_db, SessionLocal, Lesson, Session
 from .io.robot_mock import RobotMock
 from .state import LessonPlan, GraphState
@@ -33,7 +35,6 @@ def get_retriever():
         embedding_function=embeddings,
     )
 
-    # Chroma loads automatically from persist_directory.
     if vs._collection.count() == 0:
         raise RuntimeError(
             "Chroma index is empty. Run rag_smoke first to ingest PDFs (or ingest inside this flow)."
@@ -145,7 +146,6 @@ def build_teach_graph():
             ans = input("> ").strip()
             state["student_answers"].append(ans)
 
-            # Persist quiz in transcript without changing DB schema
             state["transcript"].append(
                 {"role": "quiz_agent", "question": q["question"], "sources": q.get("sources", [])}
             )
@@ -160,9 +160,25 @@ def build_teach_graph():
         state["score"] = state["quiz_result"]["total_score"]
         state["score_max"] = state["quiz_result"]["max_score"]
 
-        # Persist grading summary in transcript
         state["transcript"].append({"role": "grader_agent", "result": state["quiz_result"]})
+        return state
 
+    def summarize_node(state: GraphState) -> GraphState:
+        plan = LessonPlan.model_validate_json(state["lesson_plan_json"])
+
+        summary = generate_summary(
+            lesson_id=plan.lesson_id,
+            lesson_title=plan.title,
+            student_id=state["student_id"],
+            session_id=state["session_id"],
+            transcript=state["transcript"],
+            quiz_result=state.get("quiz_result"),
+            score=state.get("score"),
+            score_max=state.get("score_max"),
+        )
+
+        state["lesson_summary"] = summary.model_dump()
+        state["transcript"].append({"role": "summary_agent", "summary": state["lesson_summary"]})
         return state
 
     def persist_node(state: GraphState) -> GraphState:
@@ -183,15 +199,10 @@ def build_teach_graph():
         return state
 
     def route(state: GraphState) -> Literal["teach", "quiz", "end"]:
-        # Keep teaching until done
         if not state.get("done"):
             return "teach"
-
-        # Teaching done. If already graded, stop.
         if state.get("score") is not None:
             return "end"
-
-        # Teaching done but not graded yet -> quiz
         return "quiz"
 
     g.add_node("load_lesson", load_lesson_node)
@@ -200,6 +211,7 @@ def build_teach_graph():
     g.add_node("retrieve_quiz_context", retrieve_quiz_context_node)
     g.add_node("quiz", quiz_node)
     g.add_node("grade", grade_node)
+    g.add_node("summarize", summarize_node)
     g.add_node("persist", persist_node)
 
     g.set_entry_point("load_lesson")
@@ -207,12 +219,12 @@ def build_teach_graph():
     g.add_edge("ensure_session", "teach")
     g.add_edge("teach", "persist")
 
-    # Persist loops teaching, then branches to quiz, then grades, then persists once more, then ends.
     g.add_conditional_edges("persist", route, {"teach": "teach", "quiz": "retrieve_quiz_context", "end": END})
 
     g.add_edge("retrieve_quiz_context", "quiz")
     g.add_edge("quiz", "grade")
-    g.add_edge("grade", "persist")
+    g.add_edge("grade", "summarize")
+    g.add_edge("summarize", "persist")
 
     return g.compile()
 
@@ -230,6 +242,8 @@ def main():
     print("\nDONE:", out.get("done"), "segment_index:", out.get("segment_index"))
     if out.get("score") is not None:
         print(f"FINAL SCORE: {out['score']}/{out.get('score_max')}")
+    if out.get("lesson_summary"):
+        print("SUMMARY READY for session:", out.get("session_id"))
 
 
 if __name__ == "__main__":

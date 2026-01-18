@@ -8,8 +8,7 @@ These structures ensure type safety and validation for lesson content generated 
 from __future__ import annotations
 from typing import List, TypedDict, Literal
 from pydantic import BaseModel, Field
-from typing import List, TypedDict, Any
-
+from typing import List, TypedDict, Any, Dict
 
 class PlanSegment(BaseModel):
     """
@@ -68,6 +67,23 @@ class QuizResult(BaseModel):
     per_question: List[Dict[str, Any]] = Field(default_factory=list)
     feedback: str
 
+class LessonSummary(BaseModel):
+    lesson_id: str
+    lesson_title: str
+    student_id: str
+    session_id: str
+
+    duration_minutes: int = 15
+    key_takeaways: List[str] = Field(default_factory=list)
+    vocabulary: List[Dict[str, str]] = Field(default_factory=list)  # [{"term": "...", "definition": "..."}]
+    strengths: List[str] = Field(default_factory=list)
+    improvements: List[str] = Field(default_factory=list)
+    recommended_next_step: str
+
+    score: int | None = None
+    score_max: int | None = None
+
+
 class GraphState(TypedDict, total=False):
     # inputs
     pdf_paths: List[str]
@@ -94,3 +110,6 @@ class GraphState(TypedDict, total=False):
     quiz: List[dict]
     student_answers: List[str]
     quiz_result: dict
+
+    lesson_summary: dict
+

@@ -14,6 +14,7 @@ __pycache__/
 chroma_index/
 *.sqlite
 *.sqlite3
+*-cwd/
 
 # uv
 .uv/

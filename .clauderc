@@ -1,0 +1,22 @@
+{
+  "projectName": "REACHY-TEACHER",
+  "description": "LangGraph-orchestrated multi-agent tutoring pipeline for Reachy Mini robot",
+  "preferredModel": "sonnet",
+  "contextFiles": [
+    ".claude",
+    "README.md",
+    "pyproject.toml"
+  ],
+  "ignorePatterns": [
+    "chroma_index/**",
+    "*.sqlite",
+    "*.pyc",
+    "__pycache__/**",
+    ".venv/**",
+    "venv/**",
+    "*.egg-info/**",
+    ".pytest_cache/**",
+    "uv.lock"
+  ],
+  "customInstructions": "This is a LangGraph-based robotic tutoring system. Key principles: (1) Use durable orchestration over chat prompts, (2) All sessions are stateful and resumable, (3) All LLM outputs must be grounded in source material with citations, (4) Follow temperature settings: planning/quiz=0.2, grading=0.0, summary=0.3, (5) Always use Pydantic models with structured outputs. When modifying agents or graphs, consult state.py first for schema definitions."
+}

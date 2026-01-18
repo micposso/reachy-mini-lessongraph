@@ -1,0 +1,222 @@
+# REACHY-TEACHER Project Guide
+
+## Project Overview
+
+REACHY-TEACHER is a LangGraph-orchestrated, multi-agent tutoring pipeline for the Reachy Mini robot. This is a "robotic learning OS" built around durable orchestration and stateful sessions rather than chat prompts.
+
+**Core Workflow:**
+1. Ingest lesson PDFs → Build RAG index (Chroma + OpenAI embeddings)
+2. Generate structured 15-minute lesson plans
+3. Execute interactive teaching sessions via Reachy Mini SDK
+4. Administer 5-question quizzes with grounded rubrics
+5. Grade responses and generate personalized session summaries
+6. Email summaries and persist progress for resumable lessons
+
+## Architecture
+
+### Multi-Agent System
+- **Quiz Agent** (`agents/quiz_agent.py`): Generates 5 grounded questions with rubrics
+- **Grader Agent** (`agents/grader_agent.py`): Strict 0-2 point grading per question
+- **Summary Agent** (`agents/summary_agent.py`): Creates personalized session summaries
+
+### LangGraph Orchestrators
+
+**Lesson Planning** (`planner_only_graph.py`):
+```
+retrieve_node → plan_node → save to database
+```
+
+**Teaching Session** (`teach_graph.py`):
+```
+load_lesson → ensure_session → teach_next_segment (loop) →
+retrieve_quiz_context → quiz → grade → summarize → persist
+```
+
+Key feature: Routing logic allows resumable sessions at any segment.
+
+### Data Layer
+
+**State Management** (`state.py`):
+- `PlanSegment`: Lesson sections with script, emotion, motion, questions
+- `LessonPlan`: Complete 15-min lesson (multiple segments)
+- `QuizQuestion`: Questions with ideal answers + grading rubrics
+- `QuizResult`: Per-question grading breakdown
+- `LessonSummary`: Session summary with takeaways, vocabulary, feedback
+- `GraphState`: TypedDict for workflow state
+
+**Database** (`db.py` - SQLAlchemy + SQLite):
+- `Lesson` table: Stores generated lesson plans as JSON
+- `Session` table: Tracks student sessions with:
+  - Current segment index (for resumption)
+  - Full transcript of interactions
+  - Quiz scores and timestamps
+
+### RAG Pipeline
+
+**Vector Store** (Chroma):
+- Embeddings: OpenAI `text-embedding-3-large`
+- Chunking: RecursiveCharacterTextSplitter (1000 chars, 150 overlap)
+- Stable chunk IDs for citation tracking
+
+**Retrieval**:
+- Used in lesson planning to ground content in PDF source material
+- Used in quiz generation to ensure questions are grounded
+
+### Robot Integration
+
+**Mock Interface** (`io/robot_mock.py`):
+- `set_emotion()`: neutral, happy, curious, encouraging, serious
+- `do_motion()`: idle, nod, shake_head, look_at_student, celebrate, think
+- `say()`: Text-to-speech output
+- All actions logged to session transcript
+
+## Technology Stack
+
+- **LangGraph**: Durable orchestration and stateful workflows
+- **LangChain**: LLM integrations and document processing
+- **OpenAI GPT-4.1-mini**: Planning, quiz generation, grading, summaries
+- **Chroma**: Vector database for semantic search
+- **SQLAlchemy + SQLite**: Structured data persistence
+- **Pydantic**: Data validation and serialization
+- **UV**: Fast Python package manager
+
+## Key Files Reference
+
+### Core Orchestration
+- `teach_graph.py:1-300` - Main teaching session orchestrator with resumable state
+- `planner_only_graph.py:1-150` - Lesson planning pipeline
+
+### Agents
+- `agents/quiz_agent.py:1-100` - Quiz generation (temp 0.2, 5 questions)
+- `agents/grader_agent.py:1-80` - Grading logic (temp 0.0, 0-2 points)
+- `agents/summary_agent.py:1-100` - Session summary generation
+
+### Data & State
+- `state.py:1-100` - All Pydantic models and TypedDict definitions
+- `db.py:1-50` - SQLAlchemy models (Lesson, Session tables)
+
+### Utilities
+- `rag_smoke.py:1-100` - RAG pipeline testing and setup
+- `inspect_db.py:1-80` - Database inspection utility
+- `io/robot_mock.py:1-80` - Reachy Mini mock interface
+
+## Common Development Tasks
+
+### 1. Add a New PDF Lesson
+```python
+# Place PDF in lessons/ directory
+# Run RAG indexing
+python -m reachy_teacher.rag_smoke
+
+# Generate lesson plan
+python -m reachy_teacher.planner_only_graph
+```
+
+### 2. Modify Lesson Planning
+- Edit retrieval logic in `planner_only_graph.py:retrieve_node()`
+- Adjust plan generation in `planner_only_graph.py:plan_node()`
+- Update `PlanSegment` schema in `state.py` if changing structure
+
+### 3. Customize Quiz Behavior
+- Edit question generation in `agents/quiz_agent.py`
+- Modify grading rubrics in `agents/grader_agent.py`
+- Adjust quiz count or scoring in `teach_graph.py:quiz()`
+
+### 4. Add New Robot Emotions/Motions
+- Update `io/robot_mock.py:set_emotion()` with new emotion
+- Add motion to `io/robot_mock.py:do_motion()`
+- Document in `state.py:PlanSegment` docstrings
+
+### 5. Extend Session State
+- Add fields to `GraphState` in `state.py`
+- Update `db.py:Session` model if persisting new data
+- Modify relevant graph nodes to populate new fields
+
+### 6. Inspect Database State
+```python
+python -m reachy_teacher.inspect_db
+# Shows: current lesson, session, transcript events
+```
+
+## Important Patterns
+
+### Resumable Sessions
+Sessions track `current_segment_index` in database. When resumed:
+1. `ensure_session()` loads existing session
+2. `teach_next_segment()` continues from saved index
+3. Graph routing checks if more segments remain
+
+### Grounded Generation
+All LLM outputs cite source material:
+- Quiz questions include `chunk_ids` from RAG retrieval
+- Lesson plans reference retrieved passages
+- Summaries ground feedback in transcript
+
+### Deterministic Grading
+Grader agent uses temperature 0.0 for consistent assessment across sessions.
+
+### Schema Enforcement
+All agent outputs use Pydantic models for validation:
+- `with_structured_output()` ensures schema compliance
+- Type hints enforce correct state flow through graph
+
+## Development Guidelines
+
+### When Adding Features
+1. Update relevant Pydantic models in `state.py` first
+2. Modify graph nodes to handle new state
+3. Update database schema in `db.py` if persisting
+4. Test with `inspect_db.py` to verify state
+
+### When Modifying Agents
+1. Keep temperature settings consistent:
+   - Planning/Quiz: 0.2 (creative but controlled)
+   - Grading: 0.0 (deterministic)
+   - Summary: 0.3 (personalized but grounded)
+2. Always use `with_structured_output()` for schema enforcement
+3. Include grounding citations (chunk_ids, transcript references)
+
+### When Changing State
+1. Update `GraphState` TypedDict in `state.py`
+2. Check all graph nodes that read/write affected fields
+3. Update database models if state needs persistence
+4. Verify with smoke tests
+
+### Testing
+- Use `rag_smoke.py` to test RAG pipeline changes
+- Use `inspect_db.py` to verify database state
+- Run full pipeline with `teach_graph.py` for integration tests
+
+## Environment Configuration
+
+Required in `.env`:
+- `OPENAI_API_KEY`: OpenAI API credentials
+- `MODEL`: Default "gpt-4.1-mini"
+- Database: `reachy_teacher.sqlite` (auto-created)
+- Vector store: `chroma_index/` directory (auto-created)
+
+## Entry Points
+
+```bash
+# Generate lesson from PDF
+python -m reachy_teacher.planner_only_graph
+
+# Run teaching session
+python -m reachy_teacher.teach_graph
+
+# Test RAG pipeline
+python -m reachy_teacher.rag_smoke
+
+# Inspect database
+python -m reachy_teacher.inspect_db
+```
+
+## Philosophy
+
+This project prioritizes **durable orchestration** over ephemeral chat:
+- Sessions are stateful and resumable
+- All interactions are persisted to transcript
+- Progress is tracked at segment-level granularity
+- Students can pause/resume lessons naturally
+
+Built on LangGraph's strengths in workflow management rather than trying to encode complex logic in prompts.
