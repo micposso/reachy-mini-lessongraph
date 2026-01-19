@@ -133,13 +133,29 @@ def main():
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
     print("Connecting to Reachy Mini...")
-    with ReachyMini() as mini:
+    with ReachyMini(media_backend="default") as mini:
         print("Connected! Starting voice test...\n")
 
         # Start audio devices
         print("Starting audio recording and playback...")
         mini.media.start_recording()
         mini.media.start_playing()
+
+        # Wait for audio devices to initialize
+        print("Waiting for audio devices to stabilize...")
+        time.sleep(0.5)
+
+        # Flush any stale audio samples from the buffer
+        print("Flushing audio buffer...")
+        flush_count = 0
+        flush_start = time.time()
+        while time.time() - flush_start < 0.3:
+            chunk = mini.media.get_audio_sample()
+            if chunk is not None:
+                flush_count += 1
+            else:
+                time.sleep(0.01)
+        print(f"  Flushed {flush_count} stale samples")
 
         try:
             # Play TTS prompt
