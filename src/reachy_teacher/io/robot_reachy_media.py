@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import os
+import random
+import threading
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -162,6 +164,53 @@ class ReachyMiniRobot:
         except Exception:
             pass
 
+    # --------- talking animation ---------
+
+    def _animate_talking(self, duration: float, stop_event: threading.Event) -> None:
+        """Perform subtle head and antenna movements while speaking to look more alive."""
+        if not self._mini:
+            return
+
+        move_interval = 0.4  # seconds between movements
+        elapsed = 0.0
+        antenna_direction = 1  # alternates between 1 and -1
+
+        while elapsed < duration and not stop_event.is_set():
+            try:
+                # Small random head movements (pitch and yaw)
+                pitch = random.uniform(-5, 8)  # slight nods
+                yaw = random.uniform(-6, 6)    # slight turns
+                roll = random.uniform(-3, 3)   # slight tilts
+
+                # Antenna wiggle - alternating left/right bias
+                base_angle = random.uniform(10, 25)
+                left_antenna = base_angle + (antenna_direction * random.uniform(5, 15))
+                right_antenna = base_angle + (-antenna_direction * random.uniform(5, 15))
+                antenna_direction *= -1  # flip for next iteration
+
+                self._mini.goto_target(
+                    head=create_head_pose(pitch=pitch, yaw=yaw, roll=roll, degrees=True),
+                    antennas=np.deg2rad([left_antenna, right_antenna]),
+                    duration=move_interval * 0.8,
+                    method="minjerk"
+                )
+            except Exception:
+                pass
+
+            time.sleep(move_interval)
+            elapsed += move_interval
+
+        # Return to neutral position
+        try:
+            self._mini.goto_target(
+                head=create_head_pose(pitch=0, yaw=0, roll=0, degrees=True),
+                antennas=np.deg2rad([0, 0]),
+                duration=0.3,
+                method="minjerk"
+            )
+        except Exception:
+            pass
+
     # --------- core I/O ---------
 
     def say(self, text: str) -> None:
@@ -180,10 +229,23 @@ class ReachyMiniRobot:
         audio = _resample_to(audio, sr_in, sr_out)
         audio = _match_channels(audio, ch_out)
 
-        self._mini.media.push_audio_sample(audio)
-
+        # Start talking animation in background thread
         duration = audio.shape[0] / sr_out
+        stop_event = threading.Event()
+        animation_thread = threading.Thread(
+            target=self._animate_talking,
+            args=(duration, stop_event),
+            daemon=True
+        )
+        animation_thread.start()
+
+        # Play audio
+        self._mini.media.push_audio_sample(audio)
         time.sleep(duration + 0.1)
+
+        # Stop animation
+        stop_event.set()
+        animation_thread.join(timeout=0.5)
 
     def _record_seconds(self, seconds: float) -> tuple[np.ndarray, int]:
         assert self._mini is not None
@@ -212,17 +274,73 @@ class ReachyMiniRobot:
         audio = np.concatenate(chunks, axis=0)
         return audio, sr
 
-    def ask_and_listen_text(self, question: str, record_seconds: float = 6.0) -> str:
+    def _start_listening_pose(self) -> None:
+        """Move to an attentive listening pose - head forward, antennas wide open."""
+        if not self._mini:
+            return
+        try:
+            self._mini.goto_target(
+                head=create_head_pose(pitch=10, yaw=0, roll=0, degrees=True),  # lean forward
+                antennas=np.deg2rad([60, 60]),  # antennas wide open
+                duration=0.4,
+                method="minjerk"
+            )
+        except Exception:
+            pass
+
+    def _end_listening_pose(self) -> None:
+        """Return to neutral pose after listening."""
+        if not self._mini:
+            return
+        try:
+            self._mini.goto_target(
+                head=create_head_pose(pitch=0, yaw=0, roll=0, degrees=True),
+                antennas=np.deg2rad([0, 0]),
+                duration=0.3,
+                method="minjerk"
+            )
+        except Exception:
+            pass
+
+    def ask_and_listen_text(self, question: str, record_seconds: float = 10.0) -> str:
         self.open()
         assert self._client is not None
+        assert self._mini is not None
 
         self.say(question)
-        print(f"🎤 [LISTENING for {record_seconds}s...]")
+
+        # Move to listening pose
+        self._start_listening_pose()
+
+        # Flush any stale audio from TTS playback before recording
+        print("🔄 [Flushing audio buffer...]")
+        flush_start = time.time()
+        while time.time() - flush_start < 0.5:
+            try:
+                self._mini.media.get_audio_sample()
+            except Exception:
+                pass
+            time.sleep(0.01)
+
+        print(f"🎤 [LISTENING for {record_seconds}s... speak now!]")
+
         rec, sr = self._record_seconds(record_seconds)
 
+        # Return to neutral pose
+        self._end_listening_pose()
+
         if rec.size == 0:
-            print("🎤 [NO AUDIO CAPTURED]")
+            print("🎤 [NO AUDIO CAPTURED - 0 samples]")
             return ""
+
+        # Debug: show recording stats
+        print(f"🎤 [Recorded {rec.shape[0]} samples at {sr}Hz]")
+        print(f"🎤 [Signal: min={rec.min():.4f}, max={rec.max():.4f}, RMS={np.sqrt(np.mean(rec**2)):.4f}]")
+
+        # Check if audio is essentially silence (very low RMS)
+        rms = np.sqrt(np.mean(rec**2))
+        if rms < 0.001:
+            print("🎤 [WARNING: Very low signal - might be silence]")
 
         # downmix to mono for STT
         if rec.shape[1] > 1:

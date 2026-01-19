@@ -119,7 +119,7 @@ def build_teach_graph():
         robot.say(seg.script)
 
         # Ask the segment check question, listen for answer (fallback to typing)
-        ans = robot.ask_and_listen_text(seg.check_question, record_seconds=6.0).strip()
+        ans = robot.ask_and_listen_text(seg.check_question, record_seconds=12.0).strip()
         if not ans:
             print("⌨️  [No speech detected - fallback to typing]")
             ans = input("[Fallback typing] > ").strip()
@@ -163,7 +163,7 @@ def build_teach_graph():
         for i, q in enumerate(state["quiz"], start=1):
             print(f"\n--- Question {i}/{len(state['quiz'])} ---")
             robot.say(f"Question {i}: {q['question']}")
-            ans = robot.ask_and_listen_text("Your answer.", record_seconds=7.0).strip()
+            ans = robot.ask_and_listen_text("Your answer.", record_seconds=12.0).strip()
             if not ans:
                 print("⌨️  [No speech detected - fallback to typing]")
                 ans = input("[Fallback typing] > ").strip()
@@ -284,7 +284,7 @@ def main():
 
         out = app.invoke(
             {
-                "student_id": "student_reachy_002",
+                "student_id": "student_reachy_006",
                 "robot": robot,
             }
         )
