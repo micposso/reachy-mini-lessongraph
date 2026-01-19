@@ -106,6 +106,9 @@ class GraphState(TypedDict, total=False):
     score: int | None
     score_max: int | None
 
+    # Robot
+    robot: Any
+
     retrieved: list
     quiz: List[dict]
     student_answers: List[str]

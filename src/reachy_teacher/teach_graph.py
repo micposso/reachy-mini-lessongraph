@@ -15,11 +15,8 @@ from .agents.grader_agent import grade_quiz
 from .agents.summary_agent import generate_summary
 
 from .db import init_db, SessionLocal, Lesson, Session
-from .io.robot_mock import RobotMock
-from .state import LessonPlan, GraphState
-
 from .io.robot_factory import get_robot
-
+from .state import LessonPlan, GraphState
 
 
 def get_retriever():
@@ -102,18 +99,29 @@ def build_teach_graph():
         i = state["segment_index"]
 
         if i >= len(plan.segments):
+            print("\n" + "="*50)
+            print("✅ ALL SEGMENTS COMPLETE - Moving to quiz")
+            print("="*50)
             state["done"] = True
             return state
 
         seg = plan.segments[i]
         robot = state["robot"]
 
+        print("\n" + "="*50)
+        print(f"📚 SEGMENT {i+1}/{len(plan.segments)}: {seg.title}")
+        print(f"   Emotion: {seg.emotion} | Motion: {seg.motion}")
+        print("="*50)
+
+        # Speak the lesson segment with emotion + motion first
         robot.set_emotion(seg.emotion)
         robot.do_motion(seg.motion)
         robot.say(seg.script)
 
+        # Ask the segment check question, listen for answer (fallback to typing)
         ans = robot.ask_and_listen_text(seg.check_question, record_seconds=6.0).strip()
         if not ans:
+            print("⌨️  [No speech detected - fallback to typing]")
             ans = input("[Fallback typing] > ").strip()
 
         state["transcript"].append({"role": "teacher", "text": seg.script, "sources": seg.sources})
@@ -139,22 +147,30 @@ def build_teach_graph():
     def quiz_node(state: GraphState) -> GraphState:
         plan = LessonPlan.model_validate_json(state["lesson_plan_json"])
         robot = state["robot"]
-        robot.say(f"Question {i}: {q['question']}")
-        ans = robot.ask_and_listen_text("Your answer.", record_seconds=7.0).strip()
-        if not ans:
-            ans = input("[Fallback typing] > ").strip()
+
+        print("\n" + "="*50)
+        print("📝 QUIZ TIME!")
+        print("="*50)
 
         robot.say("Now we will do a short quiz. Answer five questions.")
 
+        print("🔄 Generating quiz questions...")
         questions = generate_quiz(plan.title, state["transcript"], state["retrieved"])
         state["quiz"] = [q.model_dump() for q in questions]
         state["student_answers"] = []
+        print(f"✅ Generated {len(questions)} questions")
 
         for i, q in enumerate(state["quiz"], start=1):
+            print(f"\n--- Question {i}/{len(state['quiz'])} ---")
             robot.say(f"Question {i}: {q['question']}")
-            ans = input("> ").strip()
+            ans = robot.ask_and_listen_text("Your answer.", record_seconds=7.0).strip()
+            if not ans:
+                print("⌨️  [No speech detected - fallback to typing]")
+                ans = input("[Fallback typing] > ").strip()
+
             state["student_answers"].append(ans)
 
+            # Persist quiz events in transcript (no DB schema changes)
             state["transcript"].append(
                 {"role": "quiz_agent", "question": q["question"], "sources": q.get("sources", [])}
             )
@@ -163,16 +179,26 @@ def build_teach_graph():
         return state
 
     def grade_node(state: GraphState) -> GraphState:
+        print("\n" + "="*50)
+        print("📊 GRADING QUIZ...")
+        print("="*50)
+
         result = grade_quiz(state["quiz"], state["student_answers"], state["retrieved"])
         state["quiz_result"] = result.model_dump()
 
         state["score"] = state["quiz_result"]["total_score"]
         state["score_max"] = state["quiz_result"]["max_score"]
 
+        print(f"✅ Score: {state['score']}/{state['score_max']}")
+
         state["transcript"].append({"role": "grader_agent", "result": state["quiz_result"]})
         return state
 
     def summarize_node(state: GraphState) -> GraphState:
+        print("\n" + "="*50)
+        print("📋 GENERATING LESSON SUMMARY...")
+        print("="*50)
+
         plan = LessonPlan.model_validate_json(state["lesson_plan_json"])
 
         summary = generate_summary(
@@ -188,6 +214,8 @@ def build_teach_graph():
 
         state["lesson_summary"] = summary.model_dump()
         state["transcript"].append({"role": "summary_agent", "summary": state["lesson_summary"]})
+
+        print("✅ Summary generated")
         return state
 
     def persist_node(state: GraphState) -> GraphState:
@@ -243,16 +271,27 @@ def main():
     app = build_teach_graph()
 
     robot = get_robot()
+    print("\n" + "="*50)
+    print(f"🚀 STARTING LESSON with {type(robot).__name__}")
+    print("="*50)
+
     try:
+        # If Reachy adapter supports open(), reserve audio devices now to fail fast
+        if hasattr(robot, "open"):
+            print("🔌 Opening robot connection...")
+            robot.open()
+            print("✅ Robot ready")
+
         out = app.invoke(
             {
-                "student_id": "student_001",
+                "student_id": "student_reachy_002",
                 "robot": robot,
             }
         )
     finally:
         try:
-            robot.close()
+            if hasattr(robot, "close"):
+                robot.close()
         except Exception:
             pass
 
@@ -260,3 +299,6 @@ def main():
     if out.get("score") is not None:
         print(f"FINAL SCORE: {out['score']}/{out.get('score_max')}")
 
+
+if __name__ == "__main__":
+    main()

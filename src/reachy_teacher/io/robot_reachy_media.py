@@ -169,6 +169,8 @@ class ReachyMiniRobot:
         assert self._mini is not None
         assert self._client is not None
 
+        print(f"\n🤖 [REACHY SAYS]: {text}")
+
         wav = _tts_wav_bytes(self._client, text)
         audio, sr_in = _wav_bytes_to_float32(wav)
 
@@ -215,9 +217,11 @@ class ReachyMiniRobot:
         assert self._client is not None
 
         self.say(question)
+        print(f"🎤 [LISTENING for {record_seconds}s...]")
         rec, sr = self._record_seconds(record_seconds)
 
         if rec.size == 0:
+            print("🎤 [NO AUDIO CAPTURED]")
             return ""
 
         # downmix to mono for STT
@@ -225,4 +229,6 @@ class ReachyMiniRobot:
             rec = rec.mean(axis=1, keepdims=True)
 
         wav = _float32_to_wav_bytes(rec, sr)
-        return _transcribe_wav(self._client, wav)
+        text = _transcribe_wav(self._client, wav)
+        print(f"🧑 [STUDENT SAYS]: {text if text else '(silence)'}")
+        return text
