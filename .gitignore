@@ -19,3 +19,12 @@ chroma_index/
 # uv
 .uv/
 uv.lock
+
+# Sound files
+*.mp3
+*.wav
+*.flac
+*.aac
+*.ogg
+*.m4a
+*.wma

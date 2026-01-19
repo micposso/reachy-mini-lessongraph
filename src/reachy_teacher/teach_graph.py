@@ -18,6 +18,9 @@ from .db import init_db, SessionLocal, Lesson, Session
 from .io.robot_mock import RobotMock
 from .state import LessonPlan, GraphState
 
+from .io.robot_factory import get_robot
+
+
 
 def get_retriever():
     api_key = os.environ["OPENAI_API_KEY"]
@@ -103,13 +106,15 @@ def build_teach_graph():
             return state
 
         seg = plan.segments[i]
-        robot = RobotMock()
+        robot = state["robot"]
 
         robot.set_emotion(seg.emotion)
         robot.do_motion(seg.motion)
         robot.say(seg.script)
 
-        ans = input(f"[Student] {seg.check_question}\n> ").strip()
+        ans = robot.ask_and_listen_text(seg.check_question, record_seconds=6.0).strip()
+        if not ans:
+            ans = input("[Fallback typing] > ").strip()
 
         state["transcript"].append({"role": "teacher", "text": seg.script, "sources": seg.sources})
         state["transcript"].append({"role": "student", "text": ans})
@@ -133,7 +138,11 @@ def build_teach_graph():
 
     def quiz_node(state: GraphState) -> GraphState:
         plan = LessonPlan.model_validate_json(state["lesson_plan_json"])
-        robot = RobotMock()
+        robot = state["robot"]
+        robot.say(f"Question {i}: {q['question']}")
+        ans = robot.ask_and_listen_text("Your answer.", record_seconds=7.0).strip()
+        if not ans:
+            ans = input("[Fallback typing] > ").strip()
 
         robot.say("Now we will do a short quiz. Answer five questions.")
 
@@ -232,19 +241,22 @@ def build_teach_graph():
 def main():
     init_db()
     app = build_teach_graph()
-    out = app.invoke(
-        {
-            "student_id": "student_001",
-            # optional: "lesson_id": "faf4de07-1b99-4b36-bb88-db12d772639b"
-        }
-    )
+
+    robot = get_robot()
+    try:
+        out = app.invoke(
+            {
+                "student_id": "student_001",
+                "robot": robot,
+            }
+        )
+    finally:
+        try:
+            robot.close()
+        except Exception:
+            pass
 
     print("\nDONE:", out.get("done"), "segment_index:", out.get("segment_index"))
     if out.get("score") is not None:
         print(f"FINAL SCORE: {out['score']}/{out.get('score_max')}")
-    if out.get("lesson_summary"):
-        print("SUMMARY READY for session:", out.get("session_id"))
 
-
-if __name__ == "__main__":
-    main()
