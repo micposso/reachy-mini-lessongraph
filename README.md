@@ -16,6 +16,8 @@ The Reachy Mini daemon must be running to communicate with the robot. Start it i
 uv run reachy-mini-daemon
 ```
 
+Local Dashboard runs on http://localhost:8000/
+
 For simulation mode:
 
 ```bash

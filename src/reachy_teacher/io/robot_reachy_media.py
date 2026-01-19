@@ -134,33 +134,78 @@ class ReachyMiniRobot:
     # --------- expressivity (keep minimal and safe) ---------
 
     def set_emotion(self, emotion: str) -> None:
-        # You can improve this mapping later
         if not self._mini:
             return
         e = (emotion or "").lower().strip()
+        print(f"🎭 [EMOTION]: {e}")
         try:
             if e in ("happy", "excited", "encouraging"):
+                print(f"   -> Antennas UP (45°)")
                 self._mini.goto_target(antennas=np.deg2rad([45, 45]), duration=0.4, method="minjerk")
             elif e in ("sad", "serious", "calm"):
+                print(f"   -> Antennas DOWN (-20°)")
                 self._mini.goto_target(antennas=np.deg2rad([-20, -20]), duration=0.4, method="minjerk")
             else:
+                print(f"   -> Antennas NEUTRAL (0°)")
                 self._mini.goto_target(antennas=np.deg2rad([0, 0]), duration=0.3, method="minjerk")
-        except Exception:
-            pass
+        except Exception as ex:
+            print(f"   -> ERROR: {ex}")
 
     def do_motion(self, motion: str) -> None:
         if not self._mini:
             return
         m = (motion or "").lower().strip()
+        print(f"🤸 [MOTION]: {m}")
         try:
             if m in ("nod", "yes"):
+                print(f"   -> Nodding head")
                 self._mini.goto_target(head=create_head_pose(pitch=10, degrees=True), duration=0.25)
                 self._mini.goto_target(head=create_head_pose(pitch=-5, degrees=True), duration=0.25)
                 self._mini.goto_target(head=create_head_pose(), duration=0.25)
             elif m in ("shake", "no"):
+                print(f"   -> Shaking head")
                 self._mini.goto_target(head=create_head_pose(yaw=12, degrees=True), duration=0.25)
                 self._mini.goto_target(head=create_head_pose(yaw=-12, degrees=True), duration=0.25)
                 self._mini.goto_target(head=create_head_pose(), duration=0.25)
+            elif m in ("celebrate", "dance"):
+                print(f"   -> Celebrating!")
+                self._do_celebrate()
+            else:
+                print(f"   -> Unknown motion (skipped)")
+        except Exception as ex:
+            print(f"   -> ERROR: {ex}")
+
+    def _do_celebrate(self) -> None:
+        """Perform a celebration dance with head and antenna movements."""
+        if not self._mini:
+            return
+        try:
+            # Happy antenna wiggle + head dance for ~2 seconds
+            for _ in range(3):
+                # Move antennas up and head tilt right
+                self._mini.goto_target(
+                    head=create_head_pose(pitch=10, roll=15, degrees=True),
+                    antennas=np.deg2rad([70, 30]),
+                    duration=0.3,
+                    method="minjerk"
+                )
+                time.sleep(0.3)
+                # Move antennas opposite and head tilt left
+                self._mini.goto_target(
+                    head=create_head_pose(pitch=10, roll=-15, degrees=True),
+                    antennas=np.deg2rad([30, 70]),
+                    duration=0.3,
+                    method="minjerk"
+                )
+                time.sleep(0.3)
+
+            # Return to neutral
+            self._mini.goto_target(
+                head=create_head_pose(),
+                antennas=np.deg2rad([0, 0]),
+                duration=0.3,
+                method="minjerk"
+            )
         except Exception:
             pass
 

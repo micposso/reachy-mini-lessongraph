@@ -94,6 +94,30 @@ def build_teach_graph():
 
         return state
 
+    def introduce_node(state: GraphState) -> GraphState:
+        """Reachy introduces itself and the lesson topic."""
+        plan = LessonPlan.model_validate_json(state["lesson_plan_json"])
+        robot = state["robot"]
+
+        print("\n" + "="*50)
+        print("👋 INTRODUCTION")
+        print("="*50)
+
+        # Reachy introduces itself
+        robot.set_emotion("happy")
+        robot.do_motion("nod")
+        robot.say(f"Hello! I am Reachy, and I will be your teacher today.")
+
+        robot.set_emotion("excited")
+        robot.say(f"We are going to learn about {plan.title}.")
+
+        robot.set_emotion("encouraging")
+        robot.say("I will teach you in several segments, and then we will have a short quiz to test what you learned.")
+
+        robot.say("Let's begin!")
+
+        return state
+
     def teach_next_segment_node(state: GraphState) -> GraphState:
         plan = LessonPlan.model_validate_json(state["lesson_plan_json"])
         i = state["segment_index"]
@@ -123,6 +147,13 @@ def build_teach_graph():
         if not ans:
             print("⌨️  [No speech detected - fallback to typing]")
             ans = input("[Fallback typing] > ").strip()
+
+        # Repeat the answer and give encouraging feedback
+        robot.set_emotion("happy")
+        robot.say(f"You said: {ans}")
+        robot.set_emotion("encouraging")
+        robot.do_motion("nod")
+        robot.say("Great! Let's continue to the next part of our lesson.")
 
         state["transcript"].append({"role": "teacher", "text": seg.script, "sources": seg.sources})
         state["transcript"].append({"role": "student", "text": ans})
@@ -169,6 +200,28 @@ def build_teach_graph():
                 ans = input("[Fallback typing] > ").strip()
 
             state["student_answers"].append(ans)
+
+            # Repeat the answer
+            robot.say(f"You said: {ans}")
+
+            # Check if answer is correct (simple keyword matching against ideal answer)
+            ideal = q.get("ideal_answer", "").lower()
+            ans_lower = ans.lower()
+            # Consider correct if key words from ideal answer appear in student's answer
+            ideal_words = set(ideal.split())
+            ans_words = set(ans_lower.split())
+            overlap = len(ideal_words & ans_words)
+            is_correct = overlap >= max(1, len(ideal_words) // 2)  # At least half the key words
+
+            if is_correct:
+                robot.set_emotion("excited")
+                robot.say("Woohoo! That is correct!")
+                robot.do_motion("celebrate")
+                robot.say("Great job! Let's move to the next question.")
+            else:
+                robot.set_emotion("encouraging")
+                robot.do_motion("shake")
+                robot.say("Oops, not quite, but let's continue to the next question.")
 
             # Persist quiz events in transcript (no DB schema changes)
             state["transcript"].append(
@@ -244,6 +297,7 @@ def build_teach_graph():
 
     g.add_node("load_lesson", load_lesson_node)
     g.add_node("ensure_session", ensure_session_node)
+    g.add_node("introduce", introduce_node)
     g.add_node("teach", teach_next_segment_node)
     g.add_node("retrieve_quiz_context", retrieve_quiz_context_node)
     g.add_node("quiz", quiz_node)
@@ -253,7 +307,8 @@ def build_teach_graph():
 
     g.set_entry_point("load_lesson")
     g.add_edge("load_lesson", "ensure_session")
-    g.add_edge("ensure_session", "teach")
+    g.add_edge("ensure_session", "introduce")
+    g.add_edge("introduce", "teach")
     g.add_edge("teach", "persist")
 
     g.add_conditional_edges("persist", route, {"teach": "teach", "quiz": "retrieve_quiz_context", "end": END})
@@ -284,7 +339,7 @@ def main():
 
         out = app.invoke(
             {
-                "student_id": "student_reachy_006",
+                "student_id": "student_reachy_011",
                 "robot": robot,
             }
         )
