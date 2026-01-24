@@ -6,7 +6,7 @@ If you want a more provocative positioning for your audience: call it a “robot
 
 ## Activate Environment in CMD
 
-### .venv\Scripts\activate.bat
+.venv\Scripts\activate.bat
 
 ## Running the Daemon
 
@@ -30,6 +30,18 @@ Execute the main teaching pipeline with:
 
 ```bash
   uv run --env-file .env python -m reachy_teacher.teach_graph
+```
+
+Set a new student
+
+```bash
+  set STUDENT_ID=alice_2024
+```
+
+List students
+
+```bash
+  python -m reachy_teacher.db
 ```
 
 This will:

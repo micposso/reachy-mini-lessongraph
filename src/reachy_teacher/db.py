@@ -34,3 +34,46 @@ class Session(Base):
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+
+
+def list_students() -> None:
+    """List all students and their session info."""
+    from sqlalchemy import select, func
+
+    init_db()
+
+    with SessionLocal() as db:
+        # Get all unique students with their session counts and scores
+        results = db.execute(
+            select(
+                Session.student_id,
+                func.count(Session.id).label("session_count"),
+                func.max(Session.score).label("best_score"),
+                func.max(Session.score_max).label("score_max"),
+                func.max(Session.started_at).label("last_session"),
+            )
+            .group_by(Session.student_id)
+            .order_by(Session.student_id)
+        ).all()
+
+        if not results:
+            print("No students found.")
+            return
+
+        print("\n" + "="*70)
+        print("ALL STUDENTS")
+        print("="*70)
+        print(f"{'Student ID':<30} {'Sessions':<10} {'Best Score':<15} {'Last Session'}")
+        print("-"*70)
+
+        for row in results:
+            score_str = f"{row.best_score}/{row.score_max}" if row.best_score is not None else "N/A"
+            last_session = row.last_session.strftime("%Y-%m-%d %H:%M") if row.last_session else "N/A"
+            print(f"{row.student_id:<30} {row.session_count:<10} {score_str:<15} {last_session}")
+
+        print("-"*70)
+        print(f"Total: {len(results)} students\n")
+
+
+if __name__ == "__main__":
+    list_students()

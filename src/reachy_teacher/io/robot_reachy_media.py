@@ -133,21 +133,62 @@ class ReachyMiniRobot:
 
     # --------- expressivity (keep minimal and safe) ---------
 
+    def _wait_for_motion(self, duration: float) -> None:
+        """Wait for a motion to complete with extra buffer time."""
+        # Add 50% buffer to ensure motion completes before next command
+        time.sleep(duration * 1.5 + 0.2)
+
     def set_emotion(self, emotion: str) -> None:
         if not self._mini:
             return
         e = (emotion or "").lower().strip()
         print(f"🎭 [EMOTION]: {e}")
+        duration = 0.5
         try:
-            if e in ("happy", "excited", "encouraging"):
-                print(f"   -> Antennas UP (45°)")
-                self._mini.goto_target(antennas=np.deg2rad([45, 45]), duration=0.4, method="minjerk")
-            elif e in ("sad", "serious", "calm"):
-                print(f"   -> Antennas DOWN (-20°)")
-                self._mini.goto_target(antennas=np.deg2rad([-20, -20]), duration=0.4, method="minjerk")
+            if e in ("happy", "excited"):
+                print(f"   -> Antennas UP (45°) + slight head tilt")
+                self._mini.goto_target(
+                    head=create_head_pose(pitch=5, degrees=True),
+                    antennas=np.deg2rad([45, 45]),
+                    duration=duration,
+                    method="minjerk"
+                )
+            elif e in ("encouraging", "supportive"):
+                print(f"   -> Antennas WARM (30°) + gentle forward lean")
+                self._mini.goto_target(
+                    head=create_head_pose(pitch=8, degrees=True),
+                    antennas=np.deg2rad([30, 30]),
+                    duration=duration,
+                    method="minjerk"
+                )
+            elif e in ("curious", "thinking"):
+                print(f"   -> Antennas TILTED (asymmetric) + head tilt")
+                self._mini.goto_target(
+                    head=create_head_pose(pitch=5, roll=10, degrees=True),
+                    antennas=np.deg2rad([40, 15]),
+                    duration=duration,
+                    method="minjerk"
+                )
+            elif e in ("sad", "disappointed"):
+                print(f"   -> Antennas DOWN (-25°) + head down")
+                self._mini.goto_target(
+                    head=create_head_pose(pitch=-10, degrees=True),
+                    antennas=np.deg2rad([-25, -25]),
+                    duration=duration,
+                    method="minjerk"
+                )
+            elif e in ("serious", "calm"):
+                print(f"   -> Antennas DOWN (-15°)")
+                self._mini.goto_target(antennas=np.deg2rad([-15, -15]), duration=duration, method="minjerk")
             else:
                 print(f"   -> Antennas NEUTRAL (0°)")
-                self._mini.goto_target(antennas=np.deg2rad([0, 0]), duration=0.3, method="minjerk")
+                self._mini.goto_target(
+                    head=create_head_pose(),
+                    antennas=np.deg2rad([0, 0]),
+                    duration=duration,
+                    method="minjerk"
+                )
+            self._wait_for_motion(duration)
         except Exception as ex:
             print(f"   -> ERROR: {ex}")
 
@@ -158,20 +199,45 @@ class ReachyMiniRobot:
         print(f"🤸 [MOTION]: {m}")
         try:
             if m in ("nod", "yes"):
-                print(f"   -> Nodding head")
-                self._mini.goto_target(head=create_head_pose(pitch=10, degrees=True), duration=0.25)
-                self._mini.goto_target(head=create_head_pose(pitch=-5, degrees=True), duration=0.25)
-                self._mini.goto_target(head=create_head_pose(), duration=0.25)
-            elif m in ("shake", "no"):
+                print(f"   -> Nodding head (enthusiastic)")
+                d = 0.3
+                self._mini.goto_target(head=create_head_pose(pitch=12, degrees=True), duration=d)
+                self._wait_for_motion(d)
+                self._mini.goto_target(head=create_head_pose(pitch=-3, degrees=True), duration=d)
+                self._wait_for_motion(d)
+                self._mini.goto_target(head=create_head_pose(pitch=8, degrees=True), duration=d)
+                self._wait_for_motion(d)
+                self._mini.goto_target(head=create_head_pose(), duration=d)
+                self._wait_for_motion(d)
+            elif m in ("shake", "shake_head", "no"):
                 print(f"   -> Shaking head")
-                self._mini.goto_target(head=create_head_pose(yaw=12, degrees=True), duration=0.25)
-                self._mini.goto_target(head=create_head_pose(yaw=-12, degrees=True), duration=0.25)
-                self._mini.goto_target(head=create_head_pose(), duration=0.25)
+                d = 0.35
+                self._mini.goto_target(head=create_head_pose(yaw=12, degrees=True), duration=d)
+                self._wait_for_motion(d)
+                self._mini.goto_target(head=create_head_pose(yaw=-12, degrees=True), duration=d)
+                self._wait_for_motion(d)
+                self._mini.goto_target(head=create_head_pose(), duration=d)
+                self._wait_for_motion(d)
             elif m in ("celebrate", "dance"):
                 print(f"   -> Celebrating!")
                 self._do_celebrate()
+            elif m in ("think", "thinking", "ponder"):
+                print(f"   -> Thinking pose")
+                self._do_think()
+            elif m in ("encourage", "supportive_nod"):
+                print(f"   -> Supportive/encouraging gesture")
+                self._do_encourage()
+            elif m in ("look_at_student", "attention"):
+                print(f"   -> Looking at student attentively")
+                d = 0.5
+                self._mini.goto_target(
+                    head=create_head_pose(pitch=5, degrees=True),
+                    antennas=np.deg2rad([20, 20]),
+                    duration=d
+                )
+                self._wait_for_motion(d)
             else:
-                print(f"   -> Unknown motion (skipped)")
+                print(f"   -> Unknown motion '{m}' (skipped)")
         except Exception as ex:
             print(f"   -> ERROR: {ex}")
 
@@ -180,32 +246,107 @@ class ReachyMiniRobot:
         if not self._mini:
             return
         try:
-            # Happy antenna wiggle + head dance for ~2 seconds
-            for _ in range(3):
+            d = 0.4
+            # Happy antenna wiggle + head dance
+            for _ in range(2):
                 # Move antennas up and head tilt right
                 self._mini.goto_target(
                     head=create_head_pose(pitch=10, roll=15, degrees=True),
                     antennas=np.deg2rad([70, 30]),
-                    duration=0.3,
+                    duration=d,
                     method="minjerk"
                 )
-                time.sleep(0.3)
+                self._wait_for_motion(d)
                 # Move antennas opposite and head tilt left
                 self._mini.goto_target(
                     head=create_head_pose(pitch=10, roll=-15, degrees=True),
                     antennas=np.deg2rad([30, 70]),
-                    duration=0.3,
+                    duration=d,
                     method="minjerk"
                 )
-                time.sleep(0.3)
+                self._wait_for_motion(d)
 
             # Return to neutral
             self._mini.goto_target(
                 head=create_head_pose(),
                 antennas=np.deg2rad([0, 0]),
-                duration=0.3,
+                duration=d,
                 method="minjerk"
             )
+            self._wait_for_motion(d)
+        except Exception:
+            pass
+
+    def _do_think(self) -> None:
+        """Perform a thinking/pondering gesture - head tilt and asymmetric antennas."""
+        if not self._mini:
+            return
+        try:
+            d = 0.5
+            # Tilt head and raise one antenna higher (curious/thinking pose)
+            self._mini.goto_target(
+                head=create_head_pose(pitch=5, roll=12, degrees=True),
+                antennas=np.deg2rad([50, 10]),
+                duration=d,
+                method="minjerk"
+            )
+            self._wait_for_motion(d)
+            # Slight head movement as if contemplating
+            self._mini.goto_target(
+                head=create_head_pose(pitch=8, roll=8, yaw=-5, degrees=True),
+                antennas=np.deg2rad([40, 20]),
+                duration=d,
+                method="minjerk"
+            )
+            self._wait_for_motion(d)
+            # Return to neutral
+            self._mini.goto_target(
+                head=create_head_pose(),
+                antennas=np.deg2rad([0, 0]),
+                duration=d,
+                method="minjerk"
+            )
+            self._wait_for_motion(d)
+        except Exception:
+            pass
+
+    def _do_encourage(self) -> None:
+        """Perform a supportive, encouraging gesture - gentle nod with warm antenna position."""
+        if not self._mini:
+            return
+        try:
+            d = 0.4
+            # Warm, attentive pose with gentle forward lean
+            self._mini.goto_target(
+                head=create_head_pose(pitch=10, degrees=True),
+                antennas=np.deg2rad([35, 35]),
+                duration=d,
+                method="minjerk"
+            )
+            self._wait_for_motion(d)
+            # Slow, supportive nod
+            self._mini.goto_target(
+                head=create_head_pose(pitch=15, degrees=True),
+                antennas=np.deg2rad([40, 40]),
+                duration=d,
+                method="minjerk"
+            )
+            self._wait_for_motion(d)
+            self._mini.goto_target(
+                head=create_head_pose(pitch=8, degrees=True),
+                antennas=np.deg2rad([30, 30]),
+                duration=d,
+                method="minjerk"
+            )
+            self._wait_for_motion(d)
+            # Return to neutral
+            self._mini.goto_target(
+                head=create_head_pose(),
+                antennas=np.deg2rad([0, 0]),
+                duration=d,
+                method="minjerk"
+            )
+            self._wait_for_motion(d)
         except Exception:
             pass
 

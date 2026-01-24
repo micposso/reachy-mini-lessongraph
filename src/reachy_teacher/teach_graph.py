@@ -11,12 +11,14 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 
 from .agents.quiz_agent import generate_quiz
-from .agents.grader_agent import grade_quiz
+from .agents.grader_agent import grade_quiz, grade_single_answer
 from .agents.summary_agent import generate_summary
 
 from .db import init_db, SessionLocal, Lesson, Session
 from .io.robot_factory import get_robot
 from .state import LessonPlan, GraphState
+
+
 
 
 def get_retriever():
@@ -148,12 +150,34 @@ def build_teach_graph():
             print("⌨️  [No speech detected - fallback to typing]")
             ans = input("[Fallback typing] > ").strip()
 
-        # Repeat the answer and give encouraging feedback
-        robot.set_emotion("happy")
+        # Repeat the answer
         robot.say(f"You said: {ans}")
-        robot.set_emotion("encouraging")
-        robot.do_motion("nod")
-        robot.say("Great! Let's continue to the next part of our lesson.")
+
+        # Grade the answer using LLM based on lesson content
+        print(f"🧠 [Grading answer with LLM...]")
+        rating = grade_single_answer(
+            question=seg.check_question,
+            ideal_answer="",
+            student_answer=ans,
+            context=seg.script
+        )
+        print(f"   -> Rating: {rating}")
+
+        # Give feedback based on rating (same as quiz)
+        if rating == "correct":
+            robot.set_emotion("excited")
+            robot.do_motion("celebrate")
+            robot.say("That is correct!")
+        elif rating == "close":
+            robot.set_emotion("encouraging")
+            robot.do_motion("think")
+            robot.say("Umm, almost!")
+        else:  # wrong
+            robot.set_emotion("curious")
+            robot.do_motion("encourage")
+            robot.say("Not quite.")
+
+        robot.say("Let's continue to the next part of our lesson.")
 
         state["transcript"].append({"role": "teacher", "text": seg.script, "sources": seg.sources})
         state["transcript"].append({"role": "student", "text": ans})
@@ -204,24 +228,30 @@ def build_teach_graph():
             # Repeat the answer
             robot.say(f"You said: {ans}")
 
-            # Check if answer is correct (simple keyword matching against ideal answer)
-            ideal = q.get("ideal_answer", "").lower()
-            ans_lower = ans.lower()
-            # Consider correct if key words from ideal answer appear in student's answer
-            ideal_words = set(ideal.split())
-            ans_words = set(ans_lower.split())
-            overlap = len(ideal_words & ans_words)
-            is_correct = overlap >= max(1, len(ideal_words) // 2)  # At least half the key words
+            # Grade the answer using LLM for accurate real-time feedback
+            print(f"🧠 [Grading answer with LLM...]")
+            rating = grade_single_answer(
+                question=q["question"],
+                ideal_answer=q.get("ideal_answer", ""),
+                student_answer=ans
+            )
+            print(f"   -> Rating: {rating}")
 
-            if is_correct:
+            if rating == "correct":
                 robot.set_emotion("excited")
-                robot.say("Woohoo! That is correct!")
                 robot.do_motion("celebrate")
-                robot.say("Great job! Let's move to the next question.")
-            else:
+                robot.say("That is correct!")
+            elif rating == "close":
                 robot.set_emotion("encouraging")
-                robot.do_motion("shake")
-                robot.say("Oops, not quite, but let's continue to the next question.")
+                robot.do_motion("think")
+                robot.say("Umm, almost!")
+            else:  # wrong
+                robot.set_emotion("curious")
+                robot.do_motion("encourage")
+                robot.say("Not quite.")
+
+            if i < len(state["quiz"]):
+                robot.say("Let's move to the next question.")
 
             # Persist quiz events in transcript (no DB schema changes)
             state["transcript"].append(
@@ -236,6 +266,8 @@ def build_teach_graph():
         print("📊 GRADING QUIZ...")
         print("="*50)
 
+        robot = state["robot"]
+
         result = grade_quiz(state["quiz"], state["student_answers"], state["retrieved"])
         state["quiz_result"] = result.model_dump()
 
@@ -243,6 +275,30 @@ def build_teach_graph():
         state["score_max"] = state["quiz_result"]["max_score"]
 
         print(f"✅ Score: {state['score']}/{state['score_max']}")
+
+        # React to the final score with appropriate emotion
+        score_pct = (state["score"] / state["score_max"]) * 100 if state["score_max"] > 0 else 0
+
+        if score_pct >= 80:
+            # Excellent performance!
+            robot.set_emotion("excited")
+            robot.do_motion("celebrate")
+            robot.say(f"Fantastic work! You scored {state['score']} out of {state['score_max']}! That's amazing!")
+        elif score_pct >= 60:
+            # Good performance
+            robot.set_emotion("happy")
+            robot.do_motion("nod")
+            robot.say(f"Good job! You scored {state['score']} out of {state['score_max']}. You're learning well!")
+        elif score_pct >= 40:
+            # Room for improvement
+            robot.set_emotion("encouraging")
+            robot.do_motion("encourage")
+            robot.say(f"You scored {state['score']} out of {state['score_max']}. Keep practicing, you're getting there!")
+        else:
+            # Needs more work, but stay supportive
+            robot.set_emotion("supportive")
+            robot.do_motion("encourage")
+            robot.say(f"You scored {state['score']} out of {state['score_max']}. Don't worry! Learning takes time, and every attempt helps you improve.")
 
         state["transcript"].append({"role": "grader_agent", "result": state["quiz_result"]})
         return state
@@ -325,9 +381,16 @@ def main():
     init_db()
     app = build_teach_graph()
 
+    # Get student ID from environment or generate a new one
+    student_id = os.getenv("STUDENT_ID")
+    if not student_id:
+        student_id = f"student_{uuid.uuid4().hex[:8]}"
+        print(f"💡 No STUDENT_ID set - generated new student: {student_id}")
+
     robot = get_robot()
     print("\n" + "="*50)
     print(f"🚀 STARTING LESSON with {type(robot).__name__}")
+    print(f"👤 Student ID: {student_id}")
     print("="*50)
 
     try:
@@ -339,7 +402,7 @@ def main():
 
         out = app.invoke(
             {
-                "student_id": "student_reachy_011",
+                "student_id": student_id,
                 "robot": robot,
             }
         )
