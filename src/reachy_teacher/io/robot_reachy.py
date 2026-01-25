@@ -145,6 +145,26 @@ class ReachyMiniRobot:
                 mini.head.look_at(0.3, 0.05, 0.26, duration=0.25)
                 mini.head.look_at(0.3, -0.05, 0.26, duration=0.25)
                 mini.head.look_at(0.3, 0.0, 0.26, duration=0.25)
+            elif m == "dance":
+                # Celebratory dance: antenna wiggles + head bobs
+                for _ in range(3):
+                    # Antennas up, head tilt right
+                    mini.antennas.goto([1.0, 1.0], duration=0.2)
+                    mini.head.look_at(0.3, 0.08, 0.28, duration=0.2)
+                    time.sleep(0.25)
+                    # Antennas down, head tilt left
+                    mini.antennas.goto([-0.5, -0.5], duration=0.2)
+                    mini.head.look_at(0.3, -0.08, 0.24, duration=0.2)
+                    time.sleep(0.25)
+                # Return to neutral
+                mini.antennas.goto([0.5, 0.5], duration=0.3)
+                mini.head.look_at(0.3, 0.0, 0.26, duration=0.3)
+            elif m == "celebrate":
+                # Quick celebration: antennas up + nod
+                mini.antennas.goto([1.0, 1.0], duration=0.25)
+                mini.head.look_at(0.3, 0.0, 0.30, duration=0.2)
+                mini.head.look_at(0.3, 0.0, 0.24, duration=0.2)
+                mini.head.look_at(0.3, 0.0, 0.26, duration=0.2)
         except Exception:
             pass
 

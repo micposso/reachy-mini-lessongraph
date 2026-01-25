@@ -29,7 +29,7 @@ class PlanSegment(BaseModel):
     # The emotional expression the robot should display (e.g., happy, curious, serious)
     emotion: Literal["neutral","happy","curious","encouraging","serious"] = "neutral"
     # The physical gesture or body motion the robot should perform
-    motion: Literal["idle","nod","shake_head","look_at_student","celebrate","think"] = "idle"
+    motion: Literal["idle","nod","shake_head","look_at_student","celebrate","think","dance","encourage"] = "idle"
     # List of source document references used to generate this segment
     sources: List[str] = Field(default_factory=list)
 
@@ -91,6 +91,12 @@ class GraphState(TypedDict, total=False):
     student_id: str
     lesson_id: str
 
+    # Course progression
+    course_name: str  # name of the current course
+    course_lesson_files: List[str]  # ordered list of all lesson files in the course
+    current_lesson_index: int  # which lesson we're on (0-indexed)
+    course_completed: bool  # True when all lessons in course are done
+
     # planner output
     retrieved: list
     lesson_plan_json: str
@@ -115,4 +121,8 @@ class GraphState(TypedDict, total=False):
     quiz_result: dict
 
     lesson_summary: dict
+
+    # Progression decision
+    progression_decision: dict  # contains decision ('repeat'/'advance'), reasoning, etc.
+    attempt_number: int  # tracks how many times the student has attempted this lesson
 

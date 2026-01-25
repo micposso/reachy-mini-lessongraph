@@ -13,6 +13,7 @@ from langchain_chroma import Chroma
 from .agents.quiz_agent import generate_quiz
 from .agents.grader_agent import grade_quiz, grade_single_answer
 from .agents.summary_agent import generate_summary
+from .agents.progression_agent import evaluate_progression
 
 from .db import init_db, SessionLocal, Lesson, Session
 from .io.robot_factory import get_robot
@@ -93,6 +94,10 @@ def build_teach_graph():
             state["transcript"] = json.loads(sess.transcript_json)
             state["score"] = sess.score
             state["score_max"] = sess.score_max
+
+        # Initialize attempt number if not set
+        if state.get("attempt_number") is None:
+            state["attempt_number"] = 1
 
         return state
 
@@ -303,6 +308,132 @@ def build_teach_graph():
         state["transcript"].append({"role": "grader_agent", "result": state["quiz_result"]})
         return state
 
+    def progression_node(state: GraphState) -> GraphState:
+        print("\n" + "="*50)
+        print("🎯 EVALUATING PROGRESSION...")
+        print("="*50)
+
+        plan = LessonPlan.model_validate_json(state["lesson_plan_json"])
+        robot = state["robot"]
+
+        # Evaluate if student should repeat or advance
+        progression = evaluate_progression(
+            score=state["score"],
+            score_max=state["score_max"],
+            passing_threshold=60.0,
+            quiz_questions=state.get("quiz"),
+            student_answers=state.get("student_answers"),
+            quiz_result=state.get("quiz_result"),
+            lesson_title=plan.title,
+        )
+
+        state["progression_decision"] = progression.model_dump()
+
+        print(f"📈 Score: {progression.score_percentage:.1f}% (threshold: {progression.passing_threshold}%)")
+        print(f"🎯 Decision: {progression.decision.upper()}")
+
+        # Robot announces the decision
+        if progression.decision == "advance":
+            robot.set_emotion("excited")
+            robot.do_motion("dance")  # Reachy dances when student passes!
+            robot.say(f"Great news! You passed with {progression.score_percentage:.0f} percent!")
+            robot.say("You are ready to move on to the next lesson.")
+
+            if progression.strong_areas:
+                robot.set_emotion("happy")
+                strong = ", ".join(progression.strong_areas[:2])
+                robot.say(f"You did especially well on {strong}.")
+        else:
+            robot.set_emotion("encouraging")
+            robot.do_motion("encourage")
+            robot.say(f"You scored {progression.score_percentage:.0f} percent.")
+            robot.say("I recommend reviewing this lesson one more time to strengthen your understanding.")
+
+            if progression.weak_areas:
+                robot.set_emotion("supportive")
+                weak = ", ".join(progression.weak_areas[:2])
+                robot.say(f"Let's focus on improving your understanding of {weak}.")
+
+            robot.say("Remember, practice makes perfect! You can do this.")
+
+        robot.say(progression.recommendation)
+
+        state["transcript"].append({
+            "role": "progression_agent",
+            "decision": progression.decision,
+            "score_percentage": progression.score_percentage,
+            "reasoning": progression.reasoning,
+        })
+
+        return state
+
+    def reset_for_repeat_node(state: GraphState) -> GraphState:
+        """Reset state for repeating the lesson."""
+        print("\n" + "="*50)
+        print("🔄 RESETTING FOR REPEAT...")
+        print("="*50)
+
+        # Increment attempt number
+        state["attempt_number"] = state.get("attempt_number", 1) + 1
+
+        # Reset segment index to start from beginning
+        state["segment_index"] = 0
+
+        # Clear quiz-related state
+        state["quiz"] = []
+        state["student_answers"] = []
+        state["quiz_result"] = None
+        state["score"] = None
+        state["score_max"] = None
+
+        # Reset done flag
+        state["done"] = False
+
+        # Keep transcript for history but add a marker
+        state["transcript"].append({
+            "role": "system",
+            "event": "lesson_repeat",
+            "attempt_number": state["attempt_number"],
+        })
+
+        print(f"Starting attempt #{state['attempt_number']}")
+
+        return state
+
+    def re_introduce_node(state: GraphState) -> GraphState:
+        """Reachy re-introduces the lesson for a repeat attempt."""
+        plan = LessonPlan.model_validate_json(state["lesson_plan_json"])
+        robot = state["robot"]
+        attempt = state.get("attempt_number", 2)
+
+        print("\n" + "="*50)
+        print(f"🔄 RE-INTRODUCTION (Attempt #{attempt})")
+        print("="*50)
+
+        robot.set_emotion("encouraging")
+        robot.do_motion("nod")
+
+        if attempt == 2:
+            robot.say("Alright! Let's go through this lesson one more time.")
+            robot.say(f"We will review {plan.title} together.")
+        else:
+            robot.say(f"Let's try again! This is attempt number {attempt}.")
+            robot.say("Practice makes perfect, and I believe in you!")
+
+        robot.set_emotion("happy")
+        robot.say("Pay close attention this time, and don't hesitate to take your time with the answers.")
+
+        robot.say("Here we go!")
+
+        return state
+
+    def route_after_progression(state: GraphState) -> Literal["summarize", "repeat"]:
+        """Route based on progression decision."""
+        decision = state.get("progression_decision", {})
+        if decision.get("decision") == "repeat":
+            return "repeat"
+        return "summarize"
+
     def summarize_node(state: GraphState) -> GraphState:
         print("\n" + "="*50)
         print("📋 GENERATING LESSON SUMMARY...")
@@ -358,6 +489,9 @@ def build_teach_graph():
     g.add_node("retrieve_quiz_context", retrieve_quiz_context_node)
     g.add_node("quiz", quiz_node)
     g.add_node("grade", grade_node)
+    g.add_node("progression", progression_node)
+    g.add_node("reset_for_repeat", reset_for_repeat_node)
+    g.add_node("re_introduce", re_introduce_node)
     g.add_node("summarize", summarize_node)
     g.add_node("persist", persist_node)
 
@@ -371,7 +505,20 @@ def build_teach_graph():
 
     g.add_edge("retrieve_quiz_context", "quiz")
     g.add_edge("quiz", "grade")
-    g.add_edge("grade", "summarize")
+    g.add_edge("grade", "progression")
+
+    # After progression: either summarize (pass) or repeat (fail)
+    g.add_conditional_edges(
+        "progression",
+        route_after_progression,
+        {"summarize": "summarize", "repeat": "reset_for_repeat"}
+    )
+
+    # Repeat flow: reset -> re-introduce -> teach again
+    g.add_edge("reset_for_repeat", "re_introduce")
+    g.add_edge("re_introduce", "teach")
+
+    # Pass flow: summarize -> persist -> end
     g.add_edge("summarize", "persist")
 
     return g.compile()
@@ -414,8 +561,26 @@ def main():
             pass
 
     print("\nDONE:", out.get("done"), "segment_index:", out.get("segment_index"))
+    if out.get("attempt_number"):
+        print(f"ATTEMPTS: {out['attempt_number']}")
     if out.get("score") is not None:
         print(f"FINAL SCORE: {out['score']}/{out.get('score_max')}")
+
+    # Display progression decision
+    if out.get("progression_decision"):
+        decision = out["progression_decision"]
+        print(f"\n{'='*50}")
+        print("📊 PROGRESSION DECISION")
+        print(f"{'='*50}")
+        print(f"Decision: {decision.get('decision', 'unknown').upper()}")
+        print(f"Score: {decision.get('score_percentage', 0):.1f}%")
+        print(f"Threshold: {decision.get('passing_threshold', 60)}%")
+        print(f"Reasoning: {decision.get('reasoning', 'N/A')}")
+        if decision.get('weak_areas'):
+            print(f"Weak areas: {', '.join(decision['weak_areas'])}")
+        if decision.get('strong_areas'):
+            print(f"Strong areas: {', '.join(decision['strong_areas'])}")
+        print(f"Recommendation: {decision.get('recommendation', 'N/A')}")
 
 
 if __name__ == "__main__":
