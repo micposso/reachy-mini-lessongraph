@@ -1,18 +1,20 @@
 from __future__ import annotations
 import os, json, uuid
+from pathlib import Path
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_chroma import Chroma
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from .state import GraphState, LessonPlan
 from .db import init_db, SessionLocal, Lesson
+from .document_loader import load_documents
 
 
-def make_retriever(pdf_paths: list[str]):
+def make_retriever(lesson_paths: list[str]):
+    """Create a retriever from lesson documents (PDF and Markdown supported)."""
     api_key = os.environ["OPENAI_API_KEY"]
     persist_dir = "./chroma_index"
-    collection = "lesson_pdfs"
+    collection = "lesson_docs"  # renamed from lesson_pdfs to reflect multi-format support
 
     embeddings = OpenAIEmbeddings(
         model=os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-large"), api_key=api_key
@@ -24,13 +26,12 @@ def make_retriever(pdf_paths: list[str]):
     )
 
     if vs._collection.count() == 0:
-        docs = []
-        for p in pdf_paths:
-            docs.extend(PyPDFLoader(p).load())
+        docs = load_documents(lesson_paths)
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
         chunks = splitter.split_documents(docs)
         for i, d in enumerate(chunks):
-            d.metadata["chunk_id"] = f"{os.path.basename(pdf_paths[0])}_chunk_{i}"
+            source = Path(d.metadata.get("source", lesson_paths[0] if lesson_paths else "unknown"))
+            d.metadata["chunk_id"] = f"{source.stem}_chunk_{i}"
         vs.add_documents(chunks)
 
     return vs.as_retriever(search_kwargs={"k": 6})
@@ -47,7 +48,7 @@ def build_graph():
     g = StateGraph(GraphState)
 
     def retrieve_node(state: GraphState) -> GraphState:
-        retriever = make_retriever(state["pdf_paths"])
+        retriever = make_retriever(state["lesson_paths"])
         q = f"Create a 15-minute beginner lesson plan about: {state['topic']}"
         docs = retriever.invoke(q)
         state["retrieved"] = [
@@ -94,12 +95,25 @@ def build_graph():
 
 
 def main():
+    from .document_loader import select_course_interactive
+
     init_db()
+
+    # Let user select a course
+    course = select_course_interactive("lessons")
+    if not course:
+        print("No course selected. Exiting.")
+        return
+
+    print(f"\nLoading {course.lesson_count} lesson file(s) from '{course.display_name}':")
+    for f in course.lesson_files:
+        print(f"  - {f.name}")
+
     graph = build_graph()
     out = graph.invoke(
         {
-            "pdf_paths": ["lessons/lesson1.pdf"],
-            "topic": "Use the PDF content to decide the topic",
+            "lesson_paths": [str(f) for f in course.lesson_files],
+            "topic": "Use the lesson content to decide the topic",
         }
     )
     plan = LessonPlan.model_validate_json(out["lesson_plan_json"])

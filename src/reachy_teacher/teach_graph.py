@@ -24,7 +24,7 @@ from .state import LessonPlan, GraphState
 def get_retriever():
     api_key = os.environ["OPENAI_API_KEY"]
     persist_dir = os.getenv("CHROMA_DIR", "./chroma_index")
-    collection = "lesson_pdfs"
+    collection = "lesson_docs"  # renamed from lesson_pdfs to reflect multi-format support
 
     embeddings = OpenAIEmbeddings(
         model=os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-large"),
@@ -39,7 +39,7 @@ def get_retriever():
 
     if vs._collection.count() == 0:
         raise RuntimeError(
-            "Chroma index is empty. Run rag_smoke first to ingest PDFs (or ingest inside this flow)."
+            "Chroma index is empty. Run rag_smoke first to ingest lesson documents (PDF/Markdown)."
         )
 
     return vs.as_retriever(search_kwargs={"k": 6})

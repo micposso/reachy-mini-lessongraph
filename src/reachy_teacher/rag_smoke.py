@@ -3,27 +3,35 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 
+from .document_loader import load_documents, select_course_interactive
+
 
 def main() -> None:
-    # 1) Inputs
-    pdf_path = Path("lessons/lesson1.pdf")
-    if not pdf_path.exists():
-        raise FileNotFoundError(f"Missing PDF: {pdf_path.resolve()}")
+    # 1) Let user select a course
+    course = select_course_interactive("lessons")
+    if not course:
+        print("No course selected. Exiting.")
+        return
+
+    lesson_files = course.lesson_files
+
+    print(f"\nLoading {len(lesson_files)} lesson file(s) from '{course.display_name}':")
+    for f in lesson_files:
+        print(f"  - {f.name}")
 
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set in this terminal session.")
 
     persist_dir = Path("./chroma_index")
-    collection = "lesson_pdfs"
+    collection = "lesson_docs"  # renamed from lesson_pdfs to reflect multi-format support
 
-    # 2) Load PDF (page-per-document)
-    docs = PyPDFLoader(str(pdf_path)).load()
+    # 2) Load all lesson documents (PDF and Markdown)
+    docs = load_documents(lesson_files)
 
     # 3) Split into chunks
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
@@ -31,7 +39,8 @@ def main() -> None:
 
     # add stable chunk ids for citations
     for i, d in enumerate(chunks):
-        d.metadata["chunk_id"] = f"{pdf_path.stem}_chunk_{i}"
+        source = Path(d.metadata.get("source", "unknown"))
+        d.metadata["chunk_id"] = f"{source.stem}_chunk_{i}"
 
     # 4) Vector store
     embeddings = OpenAIEmbeddings(model="text-embedding-3-large", api_key=api_key)

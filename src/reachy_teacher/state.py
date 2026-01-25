@@ -86,7 +86,7 @@ class LessonSummary(BaseModel):
 
 class GraphState(TypedDict, total=False):
     # inputs
-    pdf_paths: List[str]
+    lesson_paths: List[str]  # paths to lesson files (PDF, Markdown, etc.)
     topic: str
     student_id: str
     lesson_id: str

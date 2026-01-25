@@ -24,6 +24,12 @@ For simulation mode:
 uv run reachy-mini-daemon --sim
 ```
 
+## Running the RAG smoke test
+
+```bash
+  uv run --env-file .env python -m reachy_teacher.rag_smoke
+```
+
 ## Running the Teaching Graph
 
 Execute the main teaching pipeline with:
