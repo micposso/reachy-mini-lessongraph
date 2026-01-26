@@ -1,0 +1,30 @@
+{
+  "name": "reachy-teacher",
+  "private": true,
+  "scripts": {
+    "reachy:daemon": "uv run reachy-mini-daemon",
+    "reachy:daemon:sim": "uv run reachy-mini-daemon --sim",
+
+    "reachy:rag": "uv run --env-file .env python -m reachy_teacher.rag_smoke",
+    "reachy:plan": "uv run --env-file .env python -m reachy_teacher.planner_only_graph",
+    "reachy:teach": "uv run --env-file .env python -m reachy_teacher.teach_graph",
+    "reachy:pipeline": "run-s reachy:rag reachy:plan reachy:teach",
+
+    "dash:server:install": "npm --prefix dashboard/server install",
+    "dash:client:install": "npm --prefix dashboard/frontend install",
+    "dash:install": "run-s dash:server:install dash:client:install",
+
+    "dash:server": "npm --prefix dashboard/server run dev",
+    "dash:client": "npm --prefix dashboard/frontend run dev",
+    "dash": "run-p dash:server dash:client",
+
+    "dev": "run-p reachy:daemon dash",
+    "dev:sim": "run-p reachy:daemon:sim dash",
+
+    "run": "run-p reachy:daemon dash reachy:pipeline",
+    "run:sim": "run-p reachy:daemon:sim dash reachy:pipeline"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5"
+  }
+}

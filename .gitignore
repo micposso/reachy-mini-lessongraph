@@ -20,6 +20,9 @@ chroma_index/
 .uv/
 uv.lock
 
+# Node.js
+node_modules/
+
 # Sound files
 *.mp3
 *.wav
