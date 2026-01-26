@@ -21,6 +21,10 @@ python -m reachy_teacher.db                                        # List studen
 # Reachy daemon
 uv run reachy-mini-daemon       # Real robot
 uv run reachy-mini-daemon --sim # Simulation mode
+
+# Dashboard (run both in separate terminals)
+cd dashboard/server && npm run dev   # API server at :3001
+cd dashboard/frontend && npm run dev # React UI at :5173
 ```
 
 ## Project Structure
@@ -43,8 +47,23 @@ src/reachy_teacher/
     └── summary_agent.py    # Lesson summary generation
 
 dashboard/
-├── frontend/               # React + Vite + TypeScript
+├── frontend/               # React + Vite + TypeScript + Material-UI
+│   └── src/
+│       ├── App.tsx                # Main app with navigation drawer
+│       ├── StudentDashboard.tsx   # Real-time student lesson view
+│       ├── DashboardOverview.tsx  # Stats overview (lessons, sessions, scores)
+│       ├── ActiveSessions.tsx     # Live session monitoring
+│       ├── SessionsList.tsx       # Session history with transcript viewer
+│       ├── StudentsList.tsx       # Student analytics & history
+│       ├── LessonsList.tsx        # Lesson content browser
+│       ├── api.ts                 # API service layer
+│       └── types.ts               # TypeScript type definitions
 └── server/                 # Node.js + Express + Socket.io API server
+    └── src/
+        ├── index.js        # Server initialization
+        ├── routes.js       # REST API endpoints
+        ├── db.js           # SQLite query layer
+        └── websocket.js    # Real-time WebSocket events
 
 lessons/                    # Course content (PDF/Markdown files)
 ```
@@ -58,7 +77,7 @@ lessons/                    # Course content (PDF/Markdown files)
 - **Reachy Mini SDK** - Robot control
 - **uv** - Python package manager
 - **Express + Socket.io** - Dashboard API server
-- **React + Vite** - Dashboard frontend
+- **React + Vite + Material-UI** - Dashboard frontend with real-time updates
 
 ## Environment Variables
 
@@ -82,6 +101,9 @@ STUDENT_ID=default_student
 # Dashboard server
 SERVER_PORT=3001
 FRONTEND_URL=http://localhost:5173
+
+# Dashboard frontend
+VITE_API_URL=http://localhost:3001
 ```
 
 ## Teaching Pipeline Flow
@@ -172,3 +194,41 @@ curl http://localhost:3001/api/lessons
 curl http://localhost:3001/api/sessions
 curl http://localhost:3001/api/students
 ```
+
+## Dashboard Frontend
+
+The React frontend provides a Material-UI web interface for monitoring and managing teaching sessions.
+
+### Running the Frontend
+
+```bash
+cd dashboard/frontend
+npm install
+npm run dev    # Development server at http://localhost:5173
+npm run build  # Production build
+```
+
+### Views
+
+| View | Description |
+|------|-------------|
+| **My Lesson** | Real-time student view with live captions, progress stepper, quiz scores, and transcript |
+| **Dashboard** | Overview stats (total lessons, students, sessions, avg score) with recent sessions |
+| **Live Monitor** | Grid of active sessions with progress bars, current segment, emotion/motion chips |
+| **Lessons** | Accordion-based lesson browser with segments, scripts, and learning objectives |
+| **Students** | Expandable student table with session history, best scores, and analytics |
+| **Sessions** | Complete session history with expandable transcript viewer |
+
+### Real-Time Updates
+
+- **StudentDashboard**: Polls every 2 seconds for live lesson progress
+- **DashboardOverview**: Refreshes every 5 seconds
+- **ActiveSessions**: Updates every 2 seconds for live monitoring
+- **WebSocket**: Server pushes `session:update` and `dashboard:update` events
+
+### Tech Stack
+
+- React 19 + TypeScript
+- Material-UI 7 (@mui/material, @mui/icons-material)
+- Vite 7 for bundling
+- Emotion for CSS-in-JS styling
