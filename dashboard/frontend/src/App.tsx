@@ -21,7 +21,9 @@ import PeopleIcon from '@mui/icons-material/People';
 import PlayCircleIcon from '@mui/icons-material/PlayCircle';
 import MonitorIcon from '@mui/icons-material/Monitor';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
+import FaceIcon from '@mui/icons-material/Face';
 
+import StudentDashboard from './components/StudentDashboard';
 import DashboardOverview from './components/DashboardOverview';
 import LessonsList from './components/LessonsList';
 import StudentsList from './components/StudentsList';
@@ -44,9 +46,10 @@ const theme = createTheme({
   },
 });
 
-type View = 'dashboard' | 'lessons' | 'students' | 'sessions' | 'active';
+type View = 'student' | 'dashboard' | 'lessons' | 'students' | 'sessions' | 'active';
 
 const menuItems: { id: View; label: string; icon: React.ReactNode }[] = [
+  { id: 'student', label: 'My Lesson', icon: <FaceIcon /> },
   { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
   { id: 'active', label: 'Live Monitor', icon: <MonitorIcon /> },
   { id: 'lessons', label: 'Lessons', icon: <SchoolIcon /> },
@@ -55,10 +58,12 @@ const menuItems: { id: View; label: string; icon: React.ReactNode }[] = [
 ];
 
 function App() {
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [currentView, setCurrentView] = useState<View>('student');
 
   const renderView = () => {
     switch (currentView) {
+      case 'student':
+        return <StudentDashboard />;
       case 'dashboard':
         return <DashboardOverview />;
       case 'lessons':
@@ -70,7 +75,7 @@ function App() {
       case 'active':
         return <ActiveSessions />;
       default:
-        return <DashboardOverview />;
+        return <StudentDashboard />;
     }
   };
 
